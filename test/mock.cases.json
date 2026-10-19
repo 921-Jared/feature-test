@@ -1,0 +1,178 @@
+{
+  "envs": {
+    "mock": {
+      "baseURL": "http://127.0.0.1:18901"
+    },
+    "mockp": {
+      "baseURL": "http://127.0.0.1:18901",
+      "pathPrefix": "/pre"
+    }
+  },
+  "defaultEnv": "mock",
+  "cases": [
+    {
+      "id": "TC01",
+      "name": "正常查询+JSON路径断言(含中文等值)",
+      "request": {
+        "method": "GET",
+        "path": "/ok"
+      },
+      "expect": {
+        "http": 200,
+        "code": 200,
+        "msgContains": "操作成功",
+        "json": {
+          "data.total": ">0",
+          "data.rows[0].ruleName": "=默认高温计费规则"
+        }
+      }
+    },
+    {
+      "id": "TC02",
+      "name": "业务code不符→应FAIL",
+      "request": {
+        "method": "GET",
+        "path": "/badcode"
+      },
+      "expect": {
+        "code": 200
+      }
+    },
+    {
+      "id": "TC03",
+      "name": "POST中文body文件回显→UTF-8链路",
+      "request": {
+        "method": "POST",
+        "path": "/echo",
+        "bodyFile": "bodies/TC03-body.json"
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "bodyEcho.name": "contains:高温计费"
+        }
+      }
+    },
+    {
+      "id": "TC04",
+      "name": "GET中文query回显→UTF-8链路",
+      "request": {
+        "method": "GET",
+        "path": "/qs-echo",
+        "query": {
+          "name": "中文规则名"
+        }
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "data.q": "contains:中文规则名"
+        }
+      }
+    },
+    {
+      "id": "TC05",
+      "name": "msgContains不符→应FAIL",
+      "request": {
+        "method": "GET",
+        "path": "/ok"
+      },
+      "expect": {
+        "msgContains": "系统繁忙"
+      }
+    },
+    {
+      "id": "TC06",
+      "name": "数值断言不符→应FAIL",
+      "request": {
+        "method": "GET",
+        "path": "/ok"
+      },
+      "expect": {
+        "json": {
+          "data.total": ">100"
+        }
+      }
+    },
+    {
+      "id": "TC07",
+      "name": "token占位符替换→Authorization回显",
+      "request": {
+        "method": "GET",
+        "path": "/whoami"
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "data.auth": "=test-token-abc"
+        }
+      }
+    },
+    {
+      "id": "TC08",
+      "name": "布尔断言 data=true→=true 应PASS",
+      "request": {
+        "method": "GET",
+        "path": "/flag",
+        "query": {
+          "val": "true"
+        }
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "data": "=true"
+        }
+      }
+    },
+    {
+      "id": "TC09",
+      "name": "布尔断言 data=true 判 !=true 应FAIL(防假PASS)",
+      "request": {
+        "method": "GET",
+        "path": "/flag",
+        "query": {
+          "val": "true"
+        }
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "data": "!=true"
+        }
+      }
+    },
+    {
+      "id": "TC10",
+      "name": "env级pathPrefix→网关路由前缀场景",
+      "env": "mockp",
+      "request": {
+        "method": "GET",
+        "path": "/ok"
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "data.marker": "=prefixed-hit"
+        }
+      }
+    },
+    {
+      "id": "TC11",
+      "name": "布尔断言 data=false→=false 应PASS(补false方向)",
+      "request": {
+        "method": "GET",
+        "path": "/flag",
+        "query": {
+          "val": "false"
+        }
+      },
+      "expect": {
+        "code": 200,
+        "json": {
+          "data": "=false"
+        }
+      }
+    }
+  ]
+}
