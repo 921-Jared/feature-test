@@ -1,6 +1,6 @@
 ---
 name: feature-test
-description: 充电桩项目专用。新功能或新接口写完后,用户要求测试/复测/回归时使用。触发词:测一下 xx、帮忙测 xx 接口、测试 xx 功能、回归 xx、出 Apifox 件、跟前端对接。
+description: 面向 RuoYi 系 Spring Cloud 微服务项目的接口级测试(示例领域:充电桩管理系统)。新功能或新接口写完后,用户要求测试/复测/回归时使用。触发词:测一下 xx、帮忙测 xx 接口、测试 xx 功能、回归 xx、出 Apifox 件、跟前端对接。
 ---
 
 # feature-test: 新功能接口测试

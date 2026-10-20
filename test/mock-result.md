@@ -2,7 +2,7 @@
 
 > 注:本文件为 `run-cases.js --out` 报告片的**格式示例,非真实跑测记录**;路径与时间为示意占位。自测产生真实记录的方法见 RUN-CASES.md「runner 用法」。
 
-- 用例文件: `<skill安装目录>\test\mock.cases.json`  env: `mock+mockp`  时间: 示例时间戳
+- 用例文件: `<skill目录>\test\mock.cases.json`  env: `mock+mockp`  时间: 示例时间戳
 - 汇总: 7 PASS / 4 FAIL / 0 ERR,共 11 条
 
 | 用例 | 名称 | 结果 | 明细 |
