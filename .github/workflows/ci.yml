@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  mock-selftest:
+    name: mock 自测(基线 7 PASS / 4 FAIL / 0 ERR,退出码=1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 起离线 mock 并重放
+        run: |
+          node test/mock-server.js & MOCK_PID=$!
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:18901/ok > /dev/null; then break; fi
+            sleep 0.5
+          done
+          OUT=$(node run-cases.js test/mock.cases.json --token test-token-abc 2>&1) && RC=0 || RC=$?
+          echo "$OUT"
+          kill $MOCK_PID 2>/dev/null || true
+          echo "$OUT" | grep -q "7 PASS / 4 FAIL / 0 ERR" || { echo "::error::stdout 缺基线汇总「7 PASS / 4 FAIL / 0 ERR」"; exit 1; }
+          if [ "$RC" -ne 1 ]; then
+            echo "::error::退出码=$RC,基线预期=1(4 条 FAIL 是设计负例;全过 0 或用法错 2 都不是本基线)"
+            exit 1
+          fi
+          echo "mock 自测符合基线:7 PASS / 4 FAIL / 0 ERR,exit=1"
+
+  toy-replay:
+    name: 玩具端到端重放(15 PASS / 0 FAIL / 0 ERR,退出码=0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 起玩具服务并重放
+        run: |
+          node examples/toy-library/server.js & TOY_PID=$!
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:9399/api/books > /dev/null; then break; fi
+            sleep 0.5
+          done
+          OUT=$(node run-cases.js examples/toy-library/cases/toy-library.json 2>&1) && RC=0 || RC=$?
+          echo "$OUT"
+          kill $TOY_PID 2>/dev/null || true
+          echo "$OUT" | grep -q "15 PASS / 0 FAIL / 0 ERR" || { echo "::error::stdout 缺「15 PASS / 0 FAIL / 0 ERR」"; exit 1; }
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::退出码=$RC,预期=0"
+            exit 1
+          fi
+          echo "玩具重放全过:15 PASS / 0 FAIL / 0 ERR,exit=0"
+
+  sensitive-scan:
+    name: 敏感词双扫描(工作区 10 词+git 全历史 7 词,零命中)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 扫工作区与 git 全历史
+        run: |
+          # 本文件自身含扫描词表字面量(词表不是泄露),扫描排除本文件路径,其余文件全扫
+          WORK_PAT='39\.108\.9\.172|charging-pile|D:[/\\]project|C:[/\\]Users|hyperthermiaId|ruleIds|2483|TableSupport:[0-9]|Controller:[0-9]+|1[3-9][0-9]{9}'
+          HIST_PAT='39\.108\.9\.172|charging-pile|D:[/\\]project|C:[/\\]Users|hyperthermiaId|ruleIds|2483'
+          if git grep -nE "$WORK_PAT" -- . ':(exclude).github/workflows/ci.yml' ; then
+            echo "::error::工作区敏感词命中,禁止发布"
+            exit 1
+          fi
+          echo "工作区敏感词零命中"
+          if git grep -nE "$HIST_PAT" $(git rev-list --all) -- . ':(exclude).github/workflows/ci.yml' ; then
+            echo "::error::git 历史敏感词命中,禁止发布"
+            exit 1
+          fi
+          echo "git 全历史敏感词零命中"
