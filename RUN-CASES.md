@@ -1,6 +1,6 @@
 # RUN-CASES.md:机器可重放用例 + runner 使用说明
 
-SKILL.md 的自动化回归参考(按需加载,平时不读)。执行者是 `run-cases.js`(本 skill 目录,node 22 零依赖)。
+SKILL.md 的自动化回归参考(按需加载,平时不读)。执行者是 `run-cases.js`(本 skill 目录,node 20+(22 开发实测)零依赖)。
 
 ## Contents
 - cases.json 格式

@@ -39,6 +39,7 @@ AI 接口级测试 skill:开发者写完一个新功能,AI 完成接口级测试
 | `<项目用例库>` | cases/ 与 reports/ 的根目录 | 自定,如独立测试平台目录 |
 | `<skill目录>` | 本 skill 安装路径 | 安装时确定 |
 | `<功能id>`/`<total值>`/`<单号形态>` | 测试数据指纹 | 各项目实测时回填 |
+| `<日期>` | 报告/回归报告文件名中的日期段 | 落盘当天(YYYY-MM-DD) |
 | `{GW}` | 网关基址占位(SKILL.md 正文) | 同 `<被测网关地址>` |
 
 被剥离的完整指纹存于维护方本地全量版档案(不入本仓库)。
@@ -51,12 +52,18 @@ feature-test/
 ├── README.md                   # 本文件
 ├── ONBOARDING.md               # 新项目接入五步
 ├── RUN-CASES.md                # 回归 runner 用法
+├── LICENSE                     # MIT 许可证
 ├── run-cases.js                # 机器重放 runner(node)
 ├── apifox-fetch-template.js    # Apifox 导入件生成模板(复制后改 6 个常量)
-└── patterns/                   # 场景配方(按需加载)
-    ├── 网关直连.md / 登录与token.md / 分页探测.md / 导出断言.md
-    ├── 回调探活.md / 状态机测试.md / 跨模块Feign双部署.md
-    ├── knownDeviation.md / Windows环境坑.md / 实证登记.md
+├── .github/workflows/ci.yml    # CI:mock 自测+玩具重放+敏感词双扫描
+├── examples/toy-library/       # 玩具级第二项目示例(零依赖 node 服务)
+│   ├── server.js / README.md
+│   ├── cases/                  # 用例(.json 机器重放 + .md 人读)
+│   └── reports/                # 首测/重放报告
+├── patterns/                   # 场景配方(按需加载)
+│   ├── 网关直连.md / 登录与token.md / 分页探测.md / 导出断言.md
+│   ├── 回调探活.md / 状态机测试.md / 跨模块Feign双部署.md
+│   └── knownDeviation.md / Windows环境坑.md / 实证登记.md
 └── test/                       # 离线自测 mock(不依赖真实服务)
     ├── mock-server.js / mock.cases.json / bodies/ / mock-result.md
 ```

@@ -74,7 +74,7 @@ description: 面向 RuoYi 系 Spring Cloud 微服务项目的接口级测试(示
 
 ### 第 5 步:Apifox 导入件(用户要跟前端对接时做)
 
-**产出可直接拖进 Apifox 团队项目导入的 JSON,别手写**——前提=本地服务在跑且是最新代码(springfox 在 `GET http://127.0.0.1:<端口>/v2/api-docs`);本地没跑但测试服已部署时可直接拉网关源 `http://<被测网关地址>/<模块前缀>/v2/api-docs`(拉取无需 token;swagger 2.0 basePath 已含路由前缀)。用本 skill 目录 `apifox-fetch-template.js`(自包含,node v22,复制改 6 个常量:OUT/PORT/KEEP_PATH/DROP/TAG/SUMMARY)。生成件要求:接口面以**前端接口文档为准**;没有文档时默认=本期新增+契约变更接口,老接口一律不打包(导入面=对接工作量,不是 controller 全集);tag 归一个中文名目录;summary 全中文;walk $ref 收齐 definitions **无悬空 $ref**;结尾打印接口清单+悬空检查。交付时说清:①Apifox 导入选**覆盖**并删同路径老接口(老契约过期,勿手改合并) ②swagger 路径不带网关前缀,前端走网关要加模块路由前缀(从历史报告/Nacos 查,与模块名不一定同),自测直连 `127.0.0.1:<端口>` ③直连本地要带测试环境 token ④代码改动后重跑脚本即刷新
+**产出可直接拖进 Apifox 团队项目导入的 JSON,别手写**——前提=本地服务在跑且是最新代码(springfox 在 `GET http://127.0.0.1:<端口>/v2/api-docs`);本地没跑但测试服已部署时可直接拉网关源 `http://<被测网关地址>/<模块前缀>/v2/api-docs`(拉取无需 token;swagger 2.0 basePath 已含路由前缀)。用本 skill 目录 `apifox-fetch-template.js`(自包含,node 20+(22 开发实测),复制改 6 个常量:OUT/PORT/KEEP_PATH/DROP/TAG/SUMMARY)。生成件要求:接口面以**前端接口文档为准**;没有文档时默认=本期新增+契约变更接口,老接口一律不打包(导入面=对接工作量,不是 controller 全集);tag 归一个中文名目录;summary 全中文;walk $ref 收齐 definitions **无悬空 $ref**;结尾打印接口清单+悬空检查。交付时说清:①Apifox 导入选**覆盖**并删同路径老接口(老契约过期,勿手改合并) ②swagger 路径不带网关前缀,前端走网关要加模块路由前缀(从历史报告/Nacos 查,与模块名不一定同),自测直连 `127.0.0.1:<端口>` ③直连本地要带测试环境 token ④代码改动后重跑脚本即刷新
 
 ## 自动化回归(机器可重放用例)
 
