@@ -8,13 +8,13 @@
 //   - 错误归因不污名:超时/连不上/用法错/断言写错各给专属提示,不把脚本错误说成"服务没起"
 //   - 连不上/401/超时/占位符未解析/重定向 → 给下一步动作提示,不静默降级
 //   - token 不落盘:报告与失败明细里的 token 回显统一替换为 {{TOKEN}}
-// 用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--timeout 10000]
+// 用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000]
 // 退出码: 0=全部通过, 1=有 FAIL/ERR, 2=用法/文件错误
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
-const USAGE = '用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--timeout 10000]';
+const USAGE = '用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000]';
 function usageExit(msg) { console.error(msg + '\n' + USAGE); process.exit(2); }
 
 // ---------- CLI ----------
@@ -85,11 +85,22 @@ if (timeoutRaw !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs <= 0)
   usageExit(`--timeout 需为正整数毫秒,收到 "${timeoutRaw}"(非法值会被 AbortSignal 拒收)`);
 }
 const outPath = argOf('--out');
+// --history:每次跑完把逐用例结果追加成 JSONL(时间/结果/耗时/env/git),数据驱动回归选样的地基
+// 目录不自动建:与 --out 同口径,路径写错要在开跑前退 2,不是跑完一半才发现没记上
+const historyDir = argOf('--history');
+if (historyDir !== undefined && !fs.existsSync(historyDir)) {
+  usageExit(`--history 目录不存在: ${historyDir}(先 mkdir,与 --out 同口径)`);
+}
 
 // token 不落盘:响应回显 token(如 /whoami 形态)统一替换为 {{TOKEN}},报告才能直接粘
+// 脱敏名单=CLI/FT_TOKEN + 各 env 显式写的 token 字面值(envs.*.token 不带 --token 跑时,回显的是 env
+// 那个 token,只认 CLI 一个会漏脱);占位符形态 "{{TOKEN}}" 替换成 "{{TOKEN}}" 恒等,无副作用
+// 按长度降序:短 token 是长 token 前缀时会先吃前缀留明文尾(CLI=abc+env=abcdef 实测漏出 "def")
+const redactTokens = [...new Set([token, ...Object.values(spec.envs || {})
+  .map(e => e && typeof e.token === 'string' ? e.token : null)].filter(Boolean))].sort((a, b) => b.length - a.length);
 function redact(s) {
-  if (!token || typeof s !== 'string') return s;
-  return s.split(token).join('{{TOKEN}}');
+  if (typeof s !== 'string' || redactTokens.length === 0) return s;
+  return redactTokens.reduce((out, t) => out.split(t).join('{{TOKEN}}'), s);
 }
 
 // 占位符替换:递归处理对象/数组,任何字符串值中的 {{TOKEN}} 用命令行/环境变量 token 填
@@ -258,7 +269,8 @@ function check(c, r) {
     fails.push(`HTTP ${r.status}(用例未声明 http 期望)——登录态失效/无权限:先向用户要新 token(F12 复制),带死 token 只会一片 401`);
   }
   if (ex.code !== undefined) {
-    if (r.json == null) fails.push(`业务 code 无法断言:响应非 JSON(前 120 字: ${r.text.slice(0, 120)})`);
+    // 非 JSON 的原文进失败明细=会带走响应里的一切(含 token 回显),过 stringify 统一 redact
+    if (r.json == null) fails.push(`业务 code 无法断言:响应非 JSON(前 120 字: ${stringify(r.text.slice(0, 120))})`);
     else if (r.json.code !== Number(ex.code)) fails.push(`业务 code 期望 ${ex.code},实际 ${r.json.code}`);
   }
   if (ex.msgContains !== undefined) {
@@ -283,6 +295,7 @@ function check(c, r) {
   const results = [];
   for (const c of selected) {
     const row = { id: c.id, name: c.name || '', fails: [], error: null };
+    const t0 = Date.now();
     try {
       const r = await fire(c);
       row.fails = check(c, r);
@@ -290,6 +303,7 @@ function check(c, r) {
     } catch (e) {
       row.error = e.message;
     }
+    row.ms = Date.now() - t0;
     results.push(row);
     const mark = row.error ? 'ERR' : row.fails.length ? 'FAIL' : 'PASS';
     console.log(`[${mark}] ${c.id} ${c.name || ''}${row.error ? ' — ' + row.error : ''}`);
@@ -302,6 +316,32 @@ function check(c, r) {
   // 混合 env 文件别只标默认 env:标实际跑过的全部 env,报告归档才不误导(R7)
   const envsUsed = [...new Set(selected.map(c => envOf(c)[0]))].join('+');
   console.log(`\n汇总: ${pass} PASS / ${fail} FAIL / ${err} ERR,共 ${results.length} 条(env=${envsUsed}${filter ? `, filter=${filter}` : ''})`);
+
+  // --history 落盘:一行一用例,run 字段标识同一次执行;fail 明细走 redact,token 不进历史文件
+  if (historyDir) {
+    const { execFileSync } = require('child_process');
+    let gitSha = null;
+    try {
+      gitSha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: path.dirname(path.resolve(casesPath)), stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch (_) { /* 用例库不是 git 仓/没装 git:记 null 不拦跑,git 是历史记录的可选维度 */ }
+    const runId = new Date().toISOString();
+    const base = path.basename(casesPath).replace(/\.[^.]+$/, '');
+    const hp = path.join(historyDir, `${base}.jsonl`);
+    const recs = results.map(r => JSON.stringify({
+      run: runId, spec: base, env: envsUsed, git: gitSha,
+      id: r.id, name: r.name,
+      result: r.error ? 'ERR' : r.fails.length ? 'FAIL' : 'PASS',
+      ms: r.ms,
+      fail: redact(String(r.error || r.fails[0] || '')).slice(0, 200) || null,
+    }));
+    try {
+      fs.appendFileSync(hp, recs.join('\n') + '\n', 'utf8');
+      console.log(`执行记录已追加: ${hp}(${recs.length} 行)`);
+    } catch (e) {
+      console.error(`执行记录写入失败(${hp}): ${e.message}`);
+      process.exit(2);
+    }
+  }
 
   if (outPath) {
     // 单元格转义:换行让表格错行、反引号撑破围栏,粘进报告前先清
