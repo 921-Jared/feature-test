@@ -17,6 +17,14 @@ AI 接口级测试 skill:开发者写完一个新功能,AI 完成接口级测试
 2. 无构建、无依赖(仅 node;测试执行还需 curl)
 3. 自测:`node test/mock-server.js &` 起本地 mock,按 [RUN-CASES.md](RUN-CASES.md) 跑 mock.cases.json,期望 7 PASS / 4 FAIL(4 条是故意设计的应 FAIL 用例)/ 0 ERR
 
+## 仓库自检(改动本仓代码时)
+
+CI 是 GitHub Actions 格式,仓托管在 gitee 时不会自动跑——本地等价把关:
+
+- `node verify.js`:一条命令过三关(mock 基线/玩具重放/敏感词双扫描),判据从 ci.yml 提取,单一来源不漂移
+- push 前自动拦截:`git config core.hooksPath githooks` 启用 pre-push 钩子(仓级配置,只影响本仓)
+- 敏感词扫描含 git 全历史:任何历史改写后必须重跑
+
 ## 使用
 
 对 AI 说「测一下 xx / 帮忙测 xx 接口 / 回归 xx / 出 Apifox 件」即可触发;完整流程见 [SKILL.md](SKILL.md)。新项目首次接入按 [ONBOARDING.md](ONBOARDING.md) 五步走。
@@ -56,6 +64,10 @@ feature-test/
 ├── run-cases.js                # 机器重放 runner(node)
 ├── apifox-fetch-template.js    # Apifox 导入件生成模板(复制后改 6 个常量)
 ├── .github/workflows/ci.yml    # CI:mock 自测+玩具重放+敏感词双扫描
+├── verify.js                   # 本地自检三关一条命令(云 CI 不跑时的等价把关)
+├── githooks/pre-push           # push 前自动自检(git config core.hooksPath githooks 启用)
+├── coverage.js                 # 分支覆盖率工具(仅 JVM 被测服务,JaCoCo agent 取数)
+├── tools/jacoco/               # jacocoagent/jacococli jar(EPL-2.0)+ 署名 README
 ├── examples/toy-library/       # 玩具级第二项目示例(零依赖 node 服务)
 │   ├── server.js / README.md
 │   ├── cases/                  # 用例(.json 机器重放 + .md 人读)

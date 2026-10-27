@@ -1,0 +1,4 @@
+#!/bin/sh
+# push 前本地自检(三关,判据与 CI 同源):不绿不放行
+# 启用:git config core.hooksPath githooks(仓级配置,只对本仓生效)
+node "$(git rev-parse --show-toplevel)/verify.js"
