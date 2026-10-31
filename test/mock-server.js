@@ -35,4 +35,4 @@ http.createServer((req, res) => {
       res.end(JSON.stringify({ code: 404, msg: 'not found' }));
     }
   });
-}).listen(PORT, () => console.log(`mock ready on ${PORT}`));
+}).listen(PORT, '127.0.0.1', () => console.log(`mock ready on 127.0.0.1:${PORT}`));

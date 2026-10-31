@@ -62,7 +62,7 @@ feature-test/
 ├── RUN-CASES.md                # 回归 runner 用法
 ├── LICENSE                     # MIT 许可证
 ├── run-cases.js                # 机器重放 runner(node)
-├── apifox-fetch-template.js    # Apifox 导入件生成模板(复制后改 6 个常量)
+├── apifox-fetch-template.js    # Apifox 导入件生成模板(复制后改 6 个常量及输出段元数据)
 ├── .github/workflows/ci.yml    # CI:mock 自测+玩具重放+敏感词双扫描
 ├── verify.js                   # 本地自检三关一条命令(云 CI 不跑时的等价把关)
 ├── githooks/pre-push           # push 前自动自检(git config core.hooksPath githooks 启用)
