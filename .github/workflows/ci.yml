@@ -31,6 +31,17 @@ jobs:
           fi
           echo "mock 自测符合基线:7 PASS / 4 FAIL / 0 ERR,exit=1"
 
+      - name: 边界自测(预检零请求/零断言/history 真实 env)
+        run: |
+          OUT=$(node test/boundary-test.js 2>&1) && RC=0 || RC=$?
+          echo "$OUT"
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::边界自测退出码=$RC,预期=0"
+            exit 1
+          fi
+          echo "$OUT" | grep -q "边界自测 6/6 全过" || { echo "::error::边界自测未全过"; exit 1; }
+          echo "边界自测 6/6 全过:预检零请求/零断言/隔离/真实env/无产物/脱敏"
+
   toy-replay:
     name: 玩具端到端重放(15 PASS / 0 FAIL / 0 ERR,退出码=0)
     runs-on: ubuntu-latest

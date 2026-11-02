@@ -21,7 +21,7 @@ AI 接口级测试 skill:开发者写完一个新功能,AI 完成接口级测试
 
 CI 是 GitHub Actions 格式,仓托管在 gitee 时不会自动跑——本地等价把关:
 
-- `node verify.js`:一条命令过三关(mock 基线/玩具重放/敏感词双扫描),判据从 ci.yml 提取,单一来源不漂移
+- `node verify.js`:一条命令过四道检查(mock 基线/边界自测/玩具重放/敏感词双扫描),判据从 ci.yml 提取,单一来源不漂移
 - push 前自动拦截:`git config core.hooksPath githooks` 启用 pre-push 钩子(仓级配置,只影响本仓)
 - 敏感词扫描含 git 全历史:任何历史改写后必须重跑
 
@@ -64,7 +64,7 @@ feature-test/
 ├── run-cases.js                # 机器重放 runner(node)
 ├── apifox-fetch-template.js    # Apifox 导入件生成模板(复制后改 6 个常量及输出段元数据)
 ├── .github/workflows/ci.yml    # CI:mock 自测+玩具重放+敏感词双扫描
-├── verify.js                   # 本地自检三关一条命令(云 CI 不跑时的等价把关)
+├── verify.js                   # 本地自检四道一条命令(云 CI 不跑时的等价把关;关1 含边界自测)
 ├── githooks/pre-push           # push 前自动自检(git config core.hooksPath githooks 启用)
 ├── coverage.js                 # 分支覆盖率工具(仅 JVM 被测服务,JaCoCo agent 取数)
 ├── tools/jacoco/               # jacocoagent/jacococli jar(EPL-2.0)+ 署名 README
@@ -78,6 +78,7 @@ feature-test/
 │   └── knownDeviation.md / Windows环境坑.md / 实证登记.md
 └── test/                       # 离线自测 mock(不依赖真实服务)
     ├── mock-server.js / mock.cases.json / bodies/ / mock-result.md
+    └── boundary-test.js        # 边界自测六场景(预检零请求/零断言/隔离/history 真实 env/无产物/脱敏)
 ```
 
 ## 许可证

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// feature-test 本地自检:CI 三关打包成一条命令(mock 基线/玩具重放/敏感词双扫描)
+// feature-test 本地自检:CI 质量门打包成一条命令(mock 基线/边界自测/玩具重放/敏感词双扫描)
 // 背景:ci.yml 是 GitHub Actions 格式而仓在 gitee,云上不会跑——判定权收到本地,
 // pre-push 钩子(githooks/)调用本脚本,不绿不放行。敏感词表单一来源=ci.yml,本脚本只提取不复制,
 // 改词表只改 ci.yml 一处,本地与云不漂移。
-// 退出码:0=三关全绿(可提交/push),1=有关卡未过,2=环境错误(node/git 异常)
+// 退出码:0=四道全绿(可提交/push),1=有关卡未过,2=环境错误(node/git 异常)
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -91,15 +91,24 @@ function scanGate() {
 }
 
 (async () => {
-  log(`feature-test 本地自检(三关,判据与 CI 同源:词表提取自 ci.yml)\n`);
+  log(`feature-test 本地自检(四道检查,判据与 CI 同源:词表提取自 ci.yml)\n`);
   const gates = [];
   gates.push(['关1 mock 自测   ', await replayGate('test/mock-server.js', 'http://127.0.0.1:18901/ok', 18901,
     ['run-cases.js', 'test/mock.cases.json', '--token', 'test-token-abc'], '7 PASS / 4 FAIL / 0 ERR', 1)]);
+  // 关1b 边界自测(并入 mock 环节):预检零请求/零断言/filter 隔离/history 真实 env/无产物/脱敏;独立端口,起停自理
+  {
+    const r = spawnSync('node', ['test/boundary-test.js'], { cwd: ROOT, encoding: 'utf8', timeout: 180000 });
+    const out = r.error ? String(r.error.message) : (r.stdout || '') + (r.stderr || '');
+    const rc = r.status === null ? 99 : r.status;
+    gates.push(['关1b 边界自测   ', rc === 0 && out.includes('边界自测 6/6 全过')
+      ? { ok: true, msg: '6/6 全过,exit=0' }
+      : { ok: false, msg: `exit=${rc}\n---- 输出尾 8 行 ----\n${out.trim().split(/\r?\n/).slice(-8).join('\n')}` }]);
+  }
   gates.push(['关2 玩具重放    ', await replayGate('examples/toy-library/server.js', 'http://127.0.0.1:9399/api/books', 9399,
     ['run-cases.js', 'examples/toy-library/cases/toy-library.json'], '15 PASS / 0 FAIL / 0 ERR', 0)]);
   gates.push(['关3 敏感词双扫描', scanGate()]);
   let allOk = true;
   for (const [name, r] of gates) { log(`${r.ok ? '✓' : '✗'} ${name}: ${r.msg}`); if (!r.ok) allOk = false; }
-  log(allOk ? '\n三关全绿:可提交/push' : '\n有关卡未过:按上方明细处理后重跑(修复前别 push)');
+  log(allOk ? '\n四道全绿:可提交/push' : '\n有关卡未过:按上方明细处理后重跑(修复前别 push)');
   process.exit(allOk ? 0 : 1);
 })();

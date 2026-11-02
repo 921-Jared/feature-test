@@ -1,8 +1,10 @@
 // runner 自测 mock:不碰任何项目服务,断言逻辑/编码链路离线验证用
-// 启动: node mock-server.js  (端口 18901,Ctrl+C 停)
+// 启动: node mock-server.js  (端口 18901,Ctrl+C 停;MOCK_PORT 环境变量可覆盖,边界自测用独立端口)
+// /count:返回启动以来收到的业务请求数(自身不计)——预检"零请求发出"的客观判据
 'use strict';
 const http = require('http');
-const PORT = 18901;
+const PORT = Number(process.env.MOCK_PORT) || 18901;
+let hits = 0;
 
 http.createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
@@ -10,6 +12,11 @@ http.createServer((req, res) => {
   let raw = '';
   req.on('data', c => raw += c);
   req.on('end', () => {
+    if (url.pathname === '/count') {
+      res.end(JSON.stringify({ code: 200, msg: '操作成功', data: { count: hits } }));
+      return;
+    }
+    hits++;
     if (url.pathname === '/ok') {
       res.end(JSON.stringify({ code: 200, msg: '操作成功', data: { total: 5, rows: [{ ruleName: '默认高温计费规则' }] } }));
     } else if (url.pathname === '/pre/ok') {

@@ -9,13 +9,15 @@
 //   - 连不上/401/超时/占位符未解析/重定向 → 给下一步动作提示,不静默降级
 //   - token 不落盘:报告与失败明细里的 token 回显统一替换为 {{TOKEN}}
 // 用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000]
-// 退出码: 0=全部通过, 1=有 FAIL/ERR, 2=用法/文件错误
+// 退出码: 0=全部通过, 1=有 FAIL/ERR, 2=用法/文件错误(含构造预检:选中用例在首请求前离线全检,任一失败零请求退 2)
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const USAGE = '用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000]';
 function usageExit(msg) { console.error(msg + '\n' + USAGE); process.exit(2); }
+// 可收集的用法错误:构造期校验抛它,预检整批收集逐条列出;执行期再抛=兜底,同样退 2
+function usageErr(msg) { const e = new Error(msg); e.usage = true; return e; }
 
 // ---------- CLI ----------
 const args = process.argv.slice(2);
@@ -52,15 +54,15 @@ if (!Array.isArray(spec.cases) || spec.cases.length === 0) {
 function envOf(c) {
   const name = c.env || cliEnv || spec.defaultEnv || Object.keys(spec.envs || {})[0];
   const e = (spec.envs || {})[name];
-  if (!e) usageExit(`用例 ${c.id || '(启动校验)'} 的 env "${name}" 不存在。可用: ${Object.keys(spec.envs || {}).join(', ') || '(无)'}`);
-  if (!e.baseURL) usageExit(`env "${name}" 缺 baseURL`);
+  if (!e) throw usageErr(`用例 ${c.id || '(启动校验)'} 的 env "${name}" 不存在。可用: ${Object.keys(spec.envs || {}).join(', ') || '(无)'}`);
+  if (!e.baseURL) throw usageErr(`env "${name}" 缺 baseURL`);
   return [name, e];
 }
 // pathPrefix 唯一校验口:以 / 开头、不含 .. ? #(防 URL 归一化吞前缀/query/hash 逃逸);尾斜杠剥掉
 function prefixOf(name, e) {
   const pp = e.pathPrefix || '';
   if (typeof pp !== 'string' || (pp !== '' && !pp.startsWith('/')) || /[?#]|\.\./.test(pp)) {
-    usageExit(`env "${name}" 的 pathPrefix 非法: ${JSON.stringify(pp)}——以 / 开头(如 "/station"),不含 .. ? #,或删掉该字段`);
+    throw usageErr(`env "${name}" 的 pathPrefix 非法: ${JSON.stringify(pp)}——以 / 开头(如 "/station"),不含 .. ? #,或删掉该字段`);
   }
   return pp.replace(/\/+$/, '');
 }
@@ -72,7 +74,7 @@ if (cliEnv !== undefined && !(spec.envs || {})[cliEnv]) {
 for (const [name, e] of Object.entries(spec.envs || {})) {
   if (!e || !e.baseURL) usageExit(`env "${name}" 缺 baseURL`);
   if (!/^https?:\/\//.test(e.baseURL)) usageExit(`env "${name}" 的 baseURL 缺 http(s):// 前缀: ${e.baseURL}——不校验会静默拼出错地址`);
-  prefixOf(name, e); // pathPrefix 同样全量先校验,别让第 N 条用例跑到一半才炸(R2/R5)
+  try { prefixOf(name, e); } catch (err) { usageExit(err.message); } // pathPrefix 同样全量先校验,别让第 N 条用例跑到一半才炸(R2/R5)
 }
 
 // CLI 参数合法性前置校验(用法错误退 2,不降级成每条 ERR 伪装成"服务没起")
@@ -117,8 +119,7 @@ function resolveTpl(v) {
 function assertResolved(v, where) {
   const s = typeof v === 'string' ? v : JSON.stringify(v);
   if (s && s.includes('{{')) {
-    console.error(`${where} 存在未解析占位符(只支持 {{TOKEN}},用 --token 或 FT_TOKEN 提供): ${redact(String(s))}`);
-    process.exit(2);
+    throw usageErr(`${where} 存在未解析占位符(只支持 {{TOKEN}},用 --token 或 FT_TOKEN 提供): ${redact(String(s))}`);
   }
 }
 
@@ -199,7 +200,10 @@ function classifyFetchError(e, url) {
   }
   return `请求执行失败(原始错误: ${e.message})——先查用例写法(method/body/header 是否合法),不是连通性问题`;
 }
-async function fire(c) {
+// 构造请求(纯离线,不发):预检与执行共用同一条构造路径,单一事实源——
+// 用法错误(env 引用/path/GET body/query 对象/bodyFile 不存在/占位符)在这里抛 usageErr,
+// 预检期整批暴露零请求退 2;执行期再抛只剩兜底意义
+function buildRequest(c) {
   const req = c.request || {};
   const [envName, envCase] = envOf(c); // 用例级 env 覆盖 defaultEnv,防悄悄打错环境
   const base = envCase.baseURL.replace(/\/+$/, ''); // 多个尾斜杠全剥://+path 会拼成 //path 静默 404(R6)
@@ -207,14 +211,14 @@ async function fire(c) {
   const prefix = prefixOf(envName, envCase); // 与启动校验同一规则,双保险
   const method = (req.method || 'GET').toUpperCase();
   // 输入校验:打错地址/方法要在发请求前拦下,不是发出去再说
-  if (typeof req.path !== 'string' || req.path === '') usageExit(`用例 ${c.id} 的 request.path 缺失(如 "/hyperthermia-setting/list")`);
-  if (!req.path.startsWith('/')) usageExit(`用例 ${c.id} 的 request.path 不以 / 开头: "${req.path}"——baseURL 已去尾斜杠,缺 / 会拼成错地址`);
+  if (typeof req.path !== 'string' || req.path === '') throw usageErr(`用例 ${c.id} 的 request.path 缺失(如 "/hyperthermia-setting/list")`);
+  if (!req.path.startsWith('/')) throw usageErr(`用例 ${c.id} 的 request.path 不以 / 开头: "${req.path}"——baseURL 已去尾斜杠,缺 / 会拼成错地址`);
   if ((method === 'GET' || method === 'HEAD') && (req.bodyFile !== undefined || req.body !== undefined)) {
-    usageExit(`用例 ${c.id} 是 ${method} 却带了 body——GET/HEAD 不允许请求体,undici 会直接拒发`);
+    throw usageErr(`用例 ${c.id} 是 ${method} 却带了 body——GET/HEAD 不允许请求体,undici 会直接拒发`);
   }
   const url = new URL(base + prefix + req.path);
   for (const [k, v] of Object.entries(resolveTpl(req.query) || {})) {
-    if (v !== null && typeof v === 'object') usageExit(`用例 ${c.id} 的 query.${k} 是对象/数组——query 值需为标量,嵌套会被拼成 "[object Object]" 发脏请求`);
+    if (v !== null && typeof v === 'object') throw usageErr(`用例 ${c.id} 的 query.${k} 是对象/数组——query 值需为标量,嵌套会被拼成 "[object Object]" 发脏请求`);
     assertResolved(v, `query ${k}`);
     url.searchParams.append(k, String(v)); // UTF-8 编码由 URL 完成,中文安全
   }
@@ -222,7 +226,7 @@ async function fire(c) {
   let body;
   if (req.bodyFile) {
     const p = path.isAbsolute(req.bodyFile) ? req.bodyFile : path.join(path.dirname(casesPath), req.bodyFile);
-    if (!fs.existsSync(p)) throw new Error(`bodyFile 不存在: ${p}`);
+    if (!fs.existsSync(p)) throw usageErr(`用例 ${c.id} 的 bodyFile 不存在: ${p}`);
     body = readText(p); // UTF-8 文件直读(剥 BOM),绕开 shell 编码
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
   } else if (req.body !== undefined) {
@@ -236,6 +240,26 @@ async function fire(c) {
     headers[envCase.tokenHeader || 'Authorization'] = token || resolveTpl(envCase.token);
   }
   for (const [k, v] of Object.entries(headers)) assertResolved(v, `header ${k}`);
+  return { url, method, headers, body, envName };
+}
+
+// 零断言拦截:expect 缺失/空对象/没有任何已知断言字段=http 200 即 PASS 的假绿,预检退 2。
+// 只拦"零断言",不强制 http+code——单写 code/msg/json 的合法用例不动(mock 基线 TC02/TC05/TC06 就是)
+function assertExpect(c) {
+  const ex = c.expect;
+  const has = ex && typeof ex === 'object' && (
+    (ex.http !== undefined && ex.http !== null) ||
+    (ex.code !== undefined && ex.code !== null) ||
+    (ex.msgContains !== undefined && ex.msgContains !== null) ||
+    (ex.json && typeof ex.json === 'object' && Object.keys(ex.json).length > 0)
+  );
+  if (!has) {
+    throw usageErr(`用例 ${c.id} 的 expect 为零断言(${ex === undefined ? '缺失' : JSON.stringify(ex)})——HTTP 200 即 PASS 是假绿;至少写一类断言(http/code/msgContains/json)`);
+  }
+}
+
+async function fire(c) {
+  const { url, method, headers, body } = buildRequest(c);
 
   let res, text;
   try {
@@ -292,15 +316,30 @@ function check(c, r) {
   const selected = filter ? spec.cases.filter(c => new RegExp(filter).test(c.id)) : spec.cases;
   if (selected.length === 0) { console.error(`--filter "${filter}" 没匹配到任何用例`); process.exit(2); }
 
+  // 构造预检:本次选中的用例逐条离线全检(env 引用/path/query 对象/GET 带 body/bodyFile 存在/占位符/零断言),
+  // 任一失败=零请求、整体退 2、不产生用例行、--out/--history 均不写——写坏的用例文件不能带着已发出的请求半途而废。
+  // --filter 只要求选中用例过预检:未选中的坏用例不阻断单条回归
+  const preErrs = [];
+  for (const c of selected) {
+    try { buildRequest(c); assertExpect(c); }
+    catch (e) { if (!e.usage) throw e; preErrs.push(`${c.id || '(无名)'}: ${e.message}`); }
+  }
+  if (preErrs.length) {
+    console.error(`构造预检未过,共 ${preErrs.length} 条(零请求已发出,--out/--history 未写):`);
+    for (const m of preErrs) console.error(`  - ${m}`);
+    process.exit(2);
+  }
+
   const results = [];
   for (const c of selected) {
-    const row = { id: c.id, name: c.name || '', fails: [], error: null };
+    const row = { id: c.id, name: c.name || '', env: envOf(c)[0], fails: [], error: null }; // env=该条实际环境,history 逐行真实 env(汇总另算合集)
     const t0 = Date.now();
     try {
       const r = await fire(c);
       row.fails = check(c, r);
       row.resp = r;
     } catch (e) {
+      if (e.usage) { console.error(e.message); process.exit(2); } // 预检过了理论上到不了这,兜底别把用法错伪装成 ERR
       row.error = e.message;
     }
     row.ms = Date.now() - t0;
@@ -314,7 +353,7 @@ function check(c, r) {
   const fail = results.filter(r => !r.error && r.fails.length).length;
   const err = results.filter(r => r.error).length;
   // 混合 env 文件别只标默认 env:标实际跑过的全部 env,报告归档才不误导(R7)
-  const envsUsed = [...new Set(selected.map(c => envOf(c)[0]))].join('+');
+  const envsUsed = [...new Set(results.map(r => r.env))].join('+'); // 终端汇总/--out 仍标合集;history 逐行已记真实 env
   console.log(`\n汇总: ${pass} PASS / ${fail} FAIL / ${err} ERR,共 ${results.length} 条(env=${envsUsed}${filter ? `, filter=${filter}` : ''})`);
 
   // --history 落盘:一行一用例,run 字段标识同一次执行;fail 明细走 redact,token 不进历史文件
@@ -328,7 +367,7 @@ function check(c, r) {
     const base = path.basename(casesPath).replace(/\.[^.]+$/, '');
     const hp = path.join(historyDir, `${base}.jsonl`);
     const recs = results.map(r => JSON.stringify({
-      run: runId, spec: base, env: envsUsed, git: gitSha,
+      run: runId, spec: base, env: r.env, git: gitSha, // 每行=该用例实际 env(混合环境可追溯),不再记合集
       id: r.id, name: r.name,
       result: r.error ? 'ERR' : r.fails.length ? 'FAIL' : 'PASS',
       ms: r.ms,

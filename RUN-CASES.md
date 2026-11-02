@@ -46,9 +46,9 @@ SKILL.md 的自动化回归参考(按需加载,平时不读)。执行者是 `run
 - `envs.<名>.baseURL` 必填;`tokenHeader` 默认 Authorization;`pathPrefix` 可选=该环境统一插在 baseURL 后的路由前缀(网关场景填模块路由如 `/station`,用例 path 保持服务本位写法,同一份用例切环境不改行);env 里也可放 `"token": "{{TOKEN}}"` 占位
 - `env`(用例级)覆盖 `defaultEnv`
 - `query`:GET/POST 均可;**中文由 runner 做 UTF-8 编码,不要自己在 path 里拼中文**
-- `bodyFile`:相对 cases.json 的路径;UTF-8 直读,自动带 `Content-Type: application/json`(中文 body 首选,等价 curl --data-binary)
+- `bodyFile`:相对 cases.json 的路径;UTF-8 直读,自动带 `Content-Type: application/json`(中文 body 首选,等价 curl --data-binary);文件不存在=构造预检退 2(零请求)
 - `body`:内联 JSON(小体量可用);与 `bodyFile` 二选一
-- `expect` 四类断言全可选,组合使用;全过才算 PASS。**expect 整体缺省=零断言,HTTP 200 即 PASS**(仅 401/403 有兜底会 FAIL)——每条至少断 http+code,观察类至少断 http,别留空 expect
+- `expect` 四类断言全可选,组合使用;全过才算 PASS。**零断言(expect 缺失/`null`/`{}`/四类一个没写)在构造预检即退 2,不再存在"HTTP 200 即 PASS"的假绿**(仅 401/403 的兜底 FAIL 仍保留);单写 code/msgContains/json 之一的合法用例不受影响
 
 ## 断言表达式速查
 
@@ -72,11 +72,11 @@ node <skill目录>/run-cases.js <cases.json> [--env local|gateway] [--filter TC0
 - `--filter`:正则匹配用例 id(如 `TC01`、`TC0[35]`),单跑失败用例/重跑子集
 - `--token`:填充 `{{TOKEN}}` 占位符与 Authorization 头;也可用环境变量 `FT_TOKEN`
 - `--out`:产出 markdown 报告片(PASS/FAIL 表+FAIL 明细附请求/响应截断),直接粘进测试报告;格式示例见 [test/mock-result.md](test/mock-result.md)
-- `--history <目录>`:跑完把逐用例结果追加为 JSONL(`<目录>/<用例文件名>.jsonl`,字段=run 时间戳/spec/env/git 短 SHA/id/name/result/ms/fail 已脱敏);目录需已存在(与 --out 同口径,写错开跑前退 2);git 字段取用例文件所在仓的当前提交,不是 git 仓则记 null。**用途=数据驱动回归选样**:跑几轮之后"哪些用例该进抽样回归"看数据说话(谁老 FAIL、谁耗时异常),不靠印象挑
+- `--history <目录>`:跑完把逐用例结果追加为 JSONL(`<目录>/<用例文件名>.jsonl`,字段=run 时间戳/spec/env/git 短 SHA/id/name/result/ms/fail 已脱敏);**每行 env=该用例实际使用的 env**(混合环境逐行各记各的,可追溯;终端汇总与 --out 仍标跑过的全部 env 合集);目录需已存在(与 --out 同口径,写错开跑前退 2);git 字段取用例文件所在仓的当前提交,不是 git 仓则记 null。**用途=数据驱动回归选样**:跑几轮之后"哪些用例该进抽样回归"看数据说话(谁老 FAIL、谁耗时异常),不靠印象挑
 - 退出码:0=全过,1=有 FAIL/ERR,2=用法或文件错误——**可接 CI/定时任务;CI 默认只跑无真实业务副作用的套件**:只读用例,以及隔离、可自动重置的本地 mock/内存服务用例(含写接口负例,如本仓 toy-library);真实或共享测试环境中的写用例必须人工触发并在本轮开跑前确认
-- 输出每条 `[PASS]/[FAIL]/[ERR]`+失败明细;ERR=连不上/超时/重定向(3xx,请求没到业务接口)/请求构造失败(如 bodyFile 不存在),断言不通过算 FAIL 不算 ERR;**用法错误分两级**:文件级(cases 数组/id/envs 定义及 baseURL/pathPrefix/CLI 参数错)开跑前整体退 2;用例级(**defaultEnv 或用例 env 引用不存在的环境**、path 缺失/query 值为对象/GET 带 body/占位符未解析)**跑到该条才退 2**——该条请求未发出,此前已执行用例不回滚(结果只在终端),`--out`/`--history` 均不写
+- 输出每条 `[PASS]/[FAIL]/[ERR]`+失败明细;ERR=连不上/超时/重定向(3xx,请求没到业务接口),断言不通过算 FAIL 不算 ERR;**用法错误两级均零请求退 2、`--out`/`--history` 均不写**:文件级(cases 数组/id/envs 定义及 baseURL/pathPrefix/CLI 参数错)开跑前整体退 2;用例级走**构造预检**——发第一个请求前对本次 `--filter` 选中的用例逐条离线全检(**defaultEnv 或用例 env 引用不存在的环境**、path 缺失或不以 / 开头/query 值为对象/GET·HEAD 带 body/bodyFile 不存在/占位符未解析/**零断言 expect**),任一失败列出全部坏用例整体退 2;请求构造类错误已全部前移进构造预检,不再出现跑一半才炸;`--filter` 只要求选中用例过预检,未选中的坏用例不阻断单条回归
 
-自测:`node test/mock-server.js` 起离线 mock,再 `node run-cases.js test/mock.cases.json --token test-token-abc`(预期 7 PASS / 4 FAIL 共 11 条——FAIL 是设计出来的负例,退出码 1)。
+自测:`node test/mock-server.js` 起离线 mock,再 `node run-cases.js test/mock.cases.json --token test-token-abc`(预期 7 PASS / 4 FAIL 共 11 条——FAIL 是设计出来的负例,退出码 1)。边界自测:`node test/boundary-test.js`(自起 mock 独立端口,六场景:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏,全过退出码 0)。
 
 ## 分支覆盖率(coverage.js,只对 JVM 被测服务有效)
 
