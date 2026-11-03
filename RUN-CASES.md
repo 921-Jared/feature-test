@@ -65,7 +65,7 @@ JSON 路径:点路径+数组下标,如 `data.rows[0].ruleName`。路径不存在
 ## runner 用法
 
 ```bash
-node <skill目录>/run-cases.js <cases.json> [--env local|gateway] [--filter TC01] [--token xxx] [--out 报告片.md] [--history 记录目录] [--timeout 10000]
+node <skill目录>/run-cases.js <cases.json> [--env local|gateway] [--filter TC01] [--token xxx] [--out 报告片.md] [--history 记录目录] [--timeout 10000] [--allow-write] [--dry-run] [--check-only]
 ```
 
 - `--env`:选 envs 里的一个作为本次默认 env(覆盖 defaultEnv,用例级 env 仍最优先);值不在 envs 里=用法错误退 2,不会静默回退
@@ -73,10 +73,14 @@ node <skill目录>/run-cases.js <cases.json> [--env local|gateway] [--filter TC0
 - `--token`:填充 `{{TOKEN}}` 占位符与 Authorization 头;也可用环境变量 `FT_TOKEN`
 - `--out`:产出 markdown 报告片(PASS/FAIL 表+FAIL 明细附请求/响应截断),直接粘进测试报告;格式示例见 [test/mock-result.md](test/mock-result.md)
 - `--history <目录>`:跑完把逐用例结果追加为 JSONL(`<目录>/<用例文件名>.jsonl`,字段=run 时间戳/spec/env/git 短 SHA/id/name/result/ms/fail 已脱敏);**每行 env=该用例实际使用的 env**(混合环境逐行各记各的,可追溯;终端汇总与 --out 仍标跑过的全部 env 合集);目录需已存在(与 --out 同口径,写错开跑前退 2);git 字段取用例文件所在仓的当前提交,不是 git 仓则记 null。**用途=数据驱动回归选样**:跑几轮之后"哪些用例该进抽样回归"看数据说话(谁老 FAIL、谁耗时异常),不靠印象挑
-- 退出码:0=全过,1=有 FAIL/ERR,2=用法或文件错误——**可接 CI/定时任务;CI 默认只跑无真实业务副作用的套件**:只读用例,以及隔离、可自动重置的本地 mock/内存服务用例(含写接口负例,如本仓 toy-library);真实或共享测试环境中的写用例必须人工触发并在本轮开跑前确认
+- `--allow-write`:写方法门禁的放行开关。选中集含 POST/PUT/DELETE/PATCH 而未给本 flag 时,**零请求退 2**,列出是哪几条写用例——"写接口按轮确认"不再靠 id 命名约定,执行器按 method 硬拦;`--allow-write` 是"本轮已确认"的执行动作,不是永久授权
+- `--dry-run`:构造预检通过后只打印选中清单(`method URL id name`,URL 已脱敏),零请求、`--out`/`--history` 不写,退出码 0;含写用例时附提示"实际执行需 --allow-write"。**用途=开跑前最后一眼**——确认 filter 选中的真是你以为的那批
+- `--check-only`:构造预检通过即停,只报"预检通过 N 条",零请求、不写产物,退出码 0(预检失败仍退 2 并列坏用例)。**用途=写用例入库前的离线机检**:不知道 env 通不通也能先验文件本身,不必真发写请求
+- 退出码:0=全过(`--dry-run`/`--check-only` 预检通过即 0),1=有 FAIL/ERR,2=用法或文件错误(含写方法用例未给 `--allow-write`)——**可接 CI/定时任务;CI 默认只跑无真实业务副作用的套件**:只读用例,以及隔离、可自动重置的本地 mock/内存服务用例(含写接口负例,如本仓 toy-library,CI 里显式带 `--allow-write`);真实或共享测试环境中的写用例必须人工触发并在本轮开跑前确认
+- 未知参数一律退 2(`--dryrun` 这类手滑不再被静默忽略——把"以为的预演"变成真发请求是最坏的一种静默降级)
 - 输出每条 `[PASS]/[FAIL]/[ERR]`+失败明细;ERR=连不上/超时/重定向(3xx,请求没到业务接口),断言不通过算 FAIL 不算 ERR;**用法错误两级均零请求退 2、`--out`/`--history` 均不写**:文件级(cases 数组/id/envs 定义及 baseURL/pathPrefix/CLI 参数错)开跑前整体退 2;用例级走**构造预检**——发第一个请求前对本次 `--filter` 选中的用例逐条离线全检(**defaultEnv 或用例 env 引用不存在的环境**、path 缺失或不以 / 开头/query 值为对象/GET·HEAD 带 body/bodyFile 不存在/占位符未解析/**零断言 expect**),任一失败列出全部坏用例整体退 2;请求构造类错误已全部前移进构造预检,不再出现跑一半才炸;`--filter` 只要求选中用例过预检,未选中的坏用例不阻断单条回归
 
-自测:`node test/mock-server.js` 起离线 mock,再 `node run-cases.js test/mock.cases.json --token test-token-abc`(预期 7 PASS / 4 FAIL 共 11 条——FAIL 是设计出来的负例,退出码 1)。边界自测:`node test/boundary-test.js`(自起 mock 独立端口,六场景:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏,全过退出码 0)。
+自测:`node test/mock-server.js` 起离线 mock,再 `node run-cases.js test/mock.cases.json --token test-token-abc --allow-write`(预期 7 PASS / 4 FAIL 共 11 条——FAIL 是设计出来的负例,退出码 1;带 `--allow-write` 是因为自测套件里有一条 POST 用例)。边界自测:`node test/boundary-test.js`(自起 mock 独立端口,九场景:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏/写门禁/零请求模式/env头字面量脱敏,全过退出码 0)。
 
 ## 分支覆盖率(coverage.js,只对 JVM 被测服务有效)
 
@@ -112,7 +116,7 @@ report 输出三档口径(全部只看 BRANCH 计数):
 
 ## 实战纪律(红线不因自动化而松动)
 
-- **写接口按轮确认**——凡对真实/共享测试环境的执行(手工或重放)含写用例,开跑前确认;写进 cases.json 是入库不是永久授权;隔离、可自动重置的本地 mock/内存服务(如本仓 mock 自测与 toy-library)不在此列;runner 只是执行器,不改变"写操作先点头"的红线;高危接口(钱/退款/删存量/批量/模拟回调)不进 JSON,保持手工+确认
+- **写接口按轮确认**——凡对真实/共享测试环境的执行(手工或重放)含写用例,开跑前确认;写进 cases.json 是入库不是永久授权;隔离、可自动重置的本地 mock/内存服务(如本仓 mock 自测与 toy-library)不在此列;runner 只是执行器,不改变"写操作先点头"的红线——**runner 侧门禁**:选中集含写方法用例必须显式 `--allow-write`,否则零请求退 2(按 method 判,不靠 id 命名);高危接口(钱/退款/删存量/批量/模拟回调)不进 JSON,保持手工+确认
 - token 不写进 cases.json(会随报告/仓库流转),用 `--token` 或 `FT_TOKEN` 传入;介意 argv 进程列表泄露就用 `FT_TOKEN` 环境变量
 - 清理 SQL 仍交用户执行;`--out` 报告片里注明"待清理"
 - 首测探索阶段可用手工 curl(灵活),**定稿后把用例同步进 cases.json**(runner 支持且非高危的才进,长度断言/xlsx/multipart 等不适用场景留 .md 并注明原因)——回归成本从"人肉重放"降到一条命令

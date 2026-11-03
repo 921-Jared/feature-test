@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 边界自测:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏
+// 边界自测:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏/写门禁/零请求模式/env头字面量脱敏
 // 不依赖任何真实服务:自起 mock(独立端口,MOCK_PORT 覆盖)+ 临时用例件(finally 删)。
-// 判据输出:末行「边界自测 6/6 全过」+ 退出码 0——verify.js 关1b 与 ci.yml mock job 以此为准
+// 判据输出:末行「边界自测 9/9 全过」+ 退出码 0——verify.js 关1b 与 ci.yml mock job 以此为准
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -118,6 +118,54 @@ function runRunner(args) {
       const histTxt = fs.readFileSync(path.join(histDir, 's6.jsonl'), 'utf8');
       const leak = outTxt.includes('secret-x-99') || histTxt.includes('secret-x-99');
       check('S6 token脱敏', r.rc === 1 && !leak && outTxt.includes('{{TOKEN}}'),
+        `rc=${r.rc} 泄露=${leak}`);
+    }
+
+    // S7 写门禁:选中集含 POST 未给 --allow-write → 零请求退 2;给了才执行
+    {
+      const f = W('s7.json', { envs, defaultEnv: 'b1', cases: [
+        OK('W1'),
+        { id: 'W2', name: '写用例', request: { method: 'POST', path: '/echo', body: { a: 1 } }, expect: { code: 200 } },
+      ] });
+      const before = await count();
+      const blocked = runRunner([f]);
+      const mid = await count();
+      const allowed = runRunner([f, '--allow-write']);
+      const after = await count();
+      check('S7 写门禁', blocked.rc === 2 && mid === before
+        && blocked.out.includes('--allow-write') && blocked.out.includes('W2')
+        && allowed.rc === 0 && after - mid === 2,
+        `未授权 rc=${blocked.rc} 请求数 ${before}→${mid};授权 rc=${allowed.rc} 请求数 ${mid}→${after}`);
+    }
+    // S8 零请求模式:--dry-run 打印 method+URL 清单、--check-only 只报预检结论,两者都不发请求
+    {
+      const f = W('s8.json', { envs, defaultEnv: 'b1', cases: [
+        OK('D1'),
+        { id: 'D2', request: { method: 'POST', path: '/echo', body: { a: 1 } }, expect: { code: 200 } },
+      ] });
+      const before = await count();
+      const dry = runRunner([f, '--dry-run']);
+      const chk = runRunner([f, '--check-only']);
+      const after = await count();
+      check('S8 零请求模式', dry.rc === 0 && chk.rc === 0 && after === before
+        && dry.out.includes('GET') && dry.out.includes('/ok') && dry.out.includes('POST') && dry.out.includes('--allow-write')
+        && chk.out.includes('构造预检通过 2 条'),
+        `dry rc=${dry.rc} check rc=${chk.rc} 请求数 ${before}→${after}`);
+    }
+    // S9 env 头字面量脱敏:env.headers 写死 Authorization 字面量,服务端回显后终端/报告/history 均零明文
+    {
+      const histDir = path.join(tmp, 'hist9'); fs.mkdirSync(histDir);
+      const out = path.join(tmp, 's9-out.md');
+      const SECRET = 'Bearer env-literal-secret-99';
+      const f = W('s9.json', {
+        envs: { b1: { baseURL: BASE, headers: { Authorization: SECRET } } }, defaultEnv: 'b1',
+        cases: [{ id: 'H1', name: 'env头字面量', request: { method: 'GET', path: '/whoami' }, expect: { code: 500 } }],
+      });
+      const r = runRunner([f, '--out', out, '--history', histDir]);
+      const outTxt = fs.readFileSync(out, 'utf8');
+      const histTxt = fs.readFileSync(path.join(histDir, 's9.jsonl'), 'utf8');
+      const leak = r.out.includes(SECRET) || outTxt.includes(SECRET) || histTxt.includes(SECRET);
+      check('S9 env头字面量脱敏', r.rc === 1 && !leak && outTxt.includes('{{TOKEN}}'),
         `rc=${r.rc} 泄露=${leak}`);
     }
 

@@ -78,7 +78,7 @@ description: 面向 RuoYi 系 Spring Cloud 微服务项目的接口级测试(示
 
 ## 自动化回归(机器可重放用例)
 
-用例双轨:`cases/<功能名>.md`(人读,含背景/发现)+ `cases/<功能名>.json`(机器重放);重放命令、断言表达式、token 传递、离线自测 mock 见 **[RUN-CASES.md](RUN-CASES.md)**(按需加载)。回归=一条命令:`node <skill目录>/run-cases.js cases/<功能名>.json --token <token> --out <报告片.md>`(`--filter TC01` 单跑失败用例);runner 路径消除 GET query/body 两类中文编码问题(手工 curl 与 Python 2 环境约束见 [patterns/Windows环境坑.md](patterns/Windows环境坑.md));首测探索可用手工 curl,定稿后把用例同步进 .json(**runner 支持且非高危的才进**)——一次投入,回归白拿
+用例双轨:`cases/<功能名>.md`(人读,含背景/发现)+ `cases/<功能名>.json`(机器重放);重放命令、断言表达式、token 传递、离线自测 mock 见 **[RUN-CASES.md](RUN-CASES.md)**(按需加载)。回归=一条命令:`node <skill目录>/run-cases.js cases/<功能名>.json --token <token> --out <报告片.md>`(`--filter TC01` 单跑失败用例;选中集含写方法用例须本轮已确认,并加 `--allow-write`,否则零请求退 2);runner 路径消除 GET query/body 两类中文编码问题(手工 curl 与 Python 2 环境约束见 [patterns/Windows环境坑.md](patterns/Windows环境坑.md));首测探索可用手工 curl,定稿后把用例同步进 .json(**runner 支持且非高危的才进**)——一次投入,回归白拿
 
 - **用例库与 skill 的维护成本边界(防膨胀红线)**:cases 文件=新功能的一次性产出,老文件**零回写维护**(契约变了自然重测重写,不是修旧文件);配方只在**踩到新坑**时补一条并登记;无实测或源码依据的条目不加,源码推导必须附闭环方式,闭环后更新 [patterns/实证登记.md](patterns/实证登记.md) 状态;回归挑代表项不全量重跑——三者保证"库越厚回归越便宜",而不是"库越厚维护越重"
 - **本地分支覆盖率(coverage.js)**:回归三步=reset 清零计数器→跑用例→report 出三档口径数字+未覆盖分支方法 TOP20;补用例对着 TOP20 打,不看用例条数。**只对 JVM 被测服务且本地进程有效**(agent 挂在被测 JVM 里);启动参数与三档口径(装配类分支不算业务分母)见 [RUN-CASES.md](RUN-CASES.md) 覆盖率节

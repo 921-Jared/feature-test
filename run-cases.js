@@ -8,13 +8,15 @@
 //   - 错误归因不污名:超时/连不上/用法错/断言写错各给专属提示,不把脚本错误说成"服务没起"
 //   - 连不上/401/超时/占位符未解析/重定向 → 给下一步动作提示,不静默降级
 //   - token 不落盘:报告与失败明细里的 token 回显统一替换为 {{TOKEN}}
-// 用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000]
-// 退出码: 0=全部通过, 1=有 FAIL/ERR, 2=用法/文件错误(含构造预检:选中用例在首请求前离线全检,任一失败零请求退 2)
+//   - 写方法门禁:选中集含 POST/PUT/DELETE/PATCH 必须显式 --allow-write(写接口按轮确认落到执行器,不靠 id 命名约定)
+//   - 零请求模式:--dry-run 打印选中清单(method+URL),--check-only 只报预检结论;两者都不发请求、不写产物
+// 用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000] [--allow-write] [--dry-run] [--check-only]
+// 退出码: 0=全部通过(--dry-run/--check-only 预检通过即 0), 1=有 FAIL/ERR, 2=用法/文件错误(含构造预检:选中用例在首请求前离线全检,任一失败零请求退 2;含写方法用例未给 --allow-write)
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
-const USAGE = '用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000]';
+const USAGE = '用法: node run-cases.js <cases.json> [--env 名称] [--filter TC01] [--token xxx] [--out 报告.md] [--history 目录] [--timeout 10000] [--allow-write] [--dry-run] [--check-only]';
 function usageExit(msg) { console.error(msg + '\n' + USAGE); process.exit(2); }
 // 可收集的用法错误:构造期校验抛它,预检整批收集逐条列出;执行期再抛=兜底,同样退 2
 function usageErr(msg) { const e = new Error(msg); e.usage = true; return e; }
@@ -94,12 +96,50 @@ if (historyDir !== undefined && !fs.existsSync(historyDir)) {
   usageExit(`--history 目录不存在: ${historyDir}(先 mkdir,与 --out 同口径)`);
 }
 
+// 裸 flag(不带值)
+const allowWrite = args.includes('--allow-write');
+const dryRun = args.includes('--dry-run');
+const checkOnly = args.includes('--check-only');
+
+// 未知参数一律退 2:手滑 --dryrun 若被静默忽略,就会把"以为的预演"变成真发请求;
+// 手滑 --allow-writ 若被静默忽略,写门禁的拦截信息也指不到真正原因
+{
+  const VALUE_FLAGS = new Set(['--env', '--filter', '--token', '--out', '--history', '--timeout']);
+  const BARE_FLAGS = new Set(['--allow-write', '--dry-run', '--check-only']);
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (BARE_FLAGS.has(a)) continue;
+    if (VALUE_FLAGS.has(a)) { i++; continue; } // 值已由 argOf 校验(缺值/值以 -- 开头都已退 2)
+    usageExit(a.startsWith('--')
+      ? `未知参数: ${a}(可用: ${[...VALUE_FLAGS, ...BARE_FLAGS].join(' ')})`
+      : `多余的参数: ${a}(只接受一个 cases.json 路径)`);
+  }
+}
+
 // token 不落盘:响应回显 token(如 /whoami 形态)统一替换为 {{TOKEN}},报告才能直接粘
 // 脱敏名单=CLI/FT_TOKEN + 各 env 显式写的 token 字面值(envs.*.token 不带 --token 跑时,回显的是 env
 // 那个 token,只认 CLI 一个会漏脱);占位符形态 "{{TOKEN}}" 替换成 "{{TOKEN}}" 恒等,无副作用
+// 另收 env/用例级显式写死的鉴权头值(F8):Authorization 等头里的字面量 token 被服务端回显时,
+// 只认上面那个变量会漏脱。只收"名字像秘密"的头,且值长度 >=8——否则 "GET"/"application/json"
+// 这类短值会被全局替换,报告读不成样
+const SECRET_HEADER_RE = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$|token|secret|passw/i;
+function secretHeaderValues(obj) {
+  const out = [];
+  if (!obj || typeof obj !== 'object') return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!SECRET_HEADER_RE.test(k) || typeof v !== 'string') continue;
+    for (const s of [v, resolveTpl(v)]) { // 原样 + 占位符展开后的值都脱(env 常写 "Bearer {{TOKEN}}")
+      if (typeof s === 'string' && s.length >= 8 && !s.includes('{{')) out.push(s);
+    }
+  }
+  return out;
+}
 // 按长度降序:短 token 是长 token 前缀时会先吃前缀留明文尾(CLI=abc+env=abcdef 实测漏出 "def")
-const redactTokens = [...new Set([token, ...Object.values(spec.envs || {})
-  .map(e => e && typeof e.token === 'string' ? e.token : null)].filter(Boolean))].sort((a, b) => b.length - a.length);
+const redactTokens = [...new Set([token,
+  ...Object.values(spec.envs || {}).map(e => e && typeof e.token === 'string' ? e.token : null),
+  ...Object.values(spec.envs || {}).flatMap(e => secretHeaderValues(e && e.headers)),
+  ...spec.cases.flatMap(c => secretHeaderValues(c && c.request && c.request.headers)),
+].filter(Boolean))].sort((a, b) => b.length - a.length);
 function redact(s) {
   if (typeof s !== 'string' || redactTokens.length === 0) return s;
   return redactTokens.reduce((out, t) => out.split(t).join('{{TOKEN}}'), s);
@@ -194,6 +234,11 @@ function stringify(v) {
 // 错误归因:超时/连不上/其他各给专属提示——不把脚本或用例错误污名为"服务没起"(误报纪律)
 function classifyFetchError(e, url) {
   if (e.name === 'TimeoutError') return `超时 ${timeoutMs}ms——先探活(netstat 查端口),网关场景查网络(原始错误: ${e.message})`;
+  // bad port 黑名单(127.0.0.1:1/7/21 等):undici 客户端侧直接拒发,TCP 都不发起,cause.code 为空——
+  // 不单独归类就会落到下面的通用分支,把"端口选得不对"说成"用例写法有问题",指错方向
+  if (e.cause && /bad port/i.test(String(e.cause.message || ''))) {
+    return `端口被 fetch 拒绝(bad port 黑名单,客户端未发起连接,不是服务/网络问题)——env.baseURL 换普通端口再试,探测用未监听端口如 59999(原始错误: ${e.message})`;
+  }
   const code = e.cause ? (e.cause.code || e.cause.name) : '';
   if (['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'EAI_AGAIN', 'UND_ERR_CONNECT_FAILED'].includes(code)) {
     return `连不上 ${url.origin}——服务没起?本地先探活;网关场景确认端口/前缀(原始错误: ${e.message})`;
@@ -328,6 +373,36 @@ function check(c, r) {
     console.error(`构造预检未过,共 ${preErrs.length} 条(零请求已发出,--out/--history 未写):`);
     for (const m of preErrs) console.error(`  - ${m}`);
     process.exit(2);
+  }
+
+  // 写方法门禁(F7):选中集含 POST/PUT/DELETE/PATCH 而未给 --allow-write → 零请求退 2。
+  // "写接口按轮确认"是红线,执行器要有落点:不靠 id 命名约定(新用例起名 T 开头就能绕),
+  // 而是按 method 判。--dry-run/--check-only 本身零请求,不做门禁(dry-run 会提示实际执行需 --allow-write)
+  const WRITE_METHODS = ['POST', 'PUT', 'DELETE', 'PATCH'];
+  const writeCases = selected.filter(c => WRITE_METHODS.includes(((c.request || {}).method || 'GET').toUpperCase()));
+  if (writeCases.length && !allowWrite && !dryRun && !checkOnly) {
+    console.error(`选中集含 ${writeCases.length} 条写方法用例,未给 --allow-write,零请求已拦截(--out/--history 未写):`);
+    for (const c of writeCases) {
+      const req = c.request || {};
+      console.error(`  - ${c.id} ${(req.method || 'GET').toUpperCase()} ${req.path || ''} ${c.name || ''}`);
+    }
+    console.error('写接口须按轮确认:确认本轮可写后重跑并加 --allow-write;只想离线预检加 --check-only;只想看选中清单加 --dry-run');
+    process.exit(2);
+  }
+
+  // 零请求模式:预检通过即停,--out/--history 不写(写用例入库前的机检、死端口预检都靠它)
+  if (checkOnly || dryRun) {
+    if (dryRun) {
+      console.log(`--dry-run:构造预检通过 ${selected.length} 条,选中清单如下(零请求,--out/--history 未写):`);
+      for (const c of selected) {
+        const { method, url } = buildRequest(c); // 纯构造,不发请求
+        console.log(`  ${method.padEnd(6)} ${redact(url.toString())}  ${c.id} ${c.name || ''}`);
+      }
+      if (writeCases.length) console.log(`注意:含 ${writeCases.length} 条写方法用例,实际执行需 --allow-write`);
+    } else {
+      console.log(`--check-only:构造预检通过 ${selected.length} 条(零请求,--out/--history 未写)`);
+    }
+    process.exit(0);
   }
 
   const results = [];

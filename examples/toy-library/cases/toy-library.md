@@ -8,7 +8,7 @@
 重放命令(**不带 --token**,读接口免鉴权,写守卫负例要求真无 token):
 
 ```
-node <skill目录>/run-cases.js examples/toy-library/cases/toy-library.json --out examples/toy-library/reports/<日期>-replay.md
+node <skill目录>/run-cases.js examples/toy-library/cases/toy-library.json --allow-write --out examples/toy-library/reports/<日期>-replay.md
 ```
 
 | id | 用例 | 说明 |

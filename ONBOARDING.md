@@ -18,7 +18,7 @@
 
 ## 第 3 步:mock 自测验 runner
 
-`node test/mock-server.js` 起本地 mock → `node run-cases.js test/mock.cases.json --token test-token-abc` → 期望 **7P/4F/0ERR、退出码 1**(**--token 必须带**:漏了会 6P/5F——TC07 auth=null,是没带 token 不是 runner 坏)。这一步证明 runner 在你的环境(node 版本/编码)可用,再碰真实接口。
+`node test/mock-server.js` 起本地 mock → `node run-cases.js test/mock.cases.json --token test-token-abc --allow-write` → 期望 **7P/4F/0ERR、退出码 1**(**--token 必须带**:漏了会 6P/5F——TC07 auth=null,是没带 token 不是 runner 坏)。这一步证明 runner 在你的环境(node 版本/编码)可用,再碰真实接口。
 
 ## 第 4 步:首个真实功能走一遍 5 步
 
