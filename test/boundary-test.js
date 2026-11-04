@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 边界自测:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏/写门禁/零请求模式/env头字面量脱敏
+// 边界自测:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏/写门禁/零请求模式/env头字面量脱敏/key族头名脱敏
 // 不依赖任何真实服务:自起 mock(独立端口,MOCK_PORT 覆盖)+ 临时用例件(finally 删)。
-// 判据输出:末行「边界自测 9/9 全过」+ 退出码 0——verify.js 关1b 与 ci.yml mock job 以此为准
+// 判据输出:末行「边界自测 10/10 全过」+ 退出码 0——verify.js 关1b 与 ci.yml mock job 以此为准
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -137,7 +137,8 @@ function runRunner(args) {
         && allowed.rc === 0 && after - mid === 2,
         `未授权 rc=${blocked.rc} 请求数 ${before}→${mid};授权 rc=${allowed.rc} 请求数 ${mid}→${after}`);
     }
-    // S8 零请求模式:--dry-run 打印 method+URL 清单、--check-only 只报预检结论,两者都不发请求
+    // S8 零请求模式:--dry-run 打印 method+URL 清单、--check-only 只报预检结论,两者都不发请求;
+    // 已给 --allow-write 时 dry-run 不再出"实际执行需 --allow-write"尾注(P3-5②)
     {
       const f = W('s8.json', { envs, defaultEnv: 'b1', cases: [
         OK('D1'),
@@ -145,12 +146,13 @@ function runRunner(args) {
       ] });
       const before = await count();
       const dry = runRunner([f, '--dry-run']);
+      const dryA = runRunner([f, '--dry-run', '--allow-write']);
       const chk = runRunner([f, '--check-only']);
       const after = await count();
-      check('S8 零请求模式', dry.rc === 0 && chk.rc === 0 && after === before
+      check('S8 零请求模式', dry.rc === 0 && dryA.rc === 0 && chk.rc === 0 && after === before
         && dry.out.includes('GET') && dry.out.includes('/ok') && dry.out.includes('POST') && dry.out.includes('--allow-write')
-        && chk.out.includes('构造预检通过 2 条'),
-        `dry rc=${dry.rc} check rc=${chk.rc} 请求数 ${before}→${after}`);
+        && !dryA.out.includes('实际执行需') && chk.out.includes('构造预检通过 2 条'),
+        `dry rc=${dry.rc} dryA rc=${dryA.rc} check rc=${chk.rc} 请求数 ${before}→${after}`);
     }
     // S9 env 头字面量脱敏:env.headers 写死 Authorization 字面量,服务端回显后终端/报告/history 均零明文
     {
@@ -167,6 +169,26 @@ function runRunner(args) {
       const leak = r.out.includes(SECRET) || outTxt.includes(SECRET) || histTxt.includes(SECRET);
       check('S9 env头字面量脱敏', r.rc === 1 && !leak && outTxt.includes('{{TOKEN}}'),
         `rc=${r.rc} 泄露=${leak}`);
+    }
+    // S10 敏感头名 key 族脱敏:api-key/private-key 此前白名单不认(P3-1)。
+    // 两条真实通道各钉一个:api-key=env 级头走 mock /whoami 响应回显,private-key=用例级头走报告请求 JSON;
+    // 正向断言"已出现且已脱敏",防"值压根没进输出"的假绿
+    {
+      const histDir = path.join(tmp, 'hist10'); fs.mkdirSync(histDir);
+      const out = path.join(tmp, 's10-out.md');
+      const K1 = 'key-family-secret-alpha-01';
+      const K2 = 'key-family-secret-beta-02';
+      const f = W('s10.json', {
+        envs: { b1: { baseURL: BASE, headers: { 'api-key': K1 } } }, defaultEnv: 'b1',
+        cases: [{ id: 'H1', name: 'key族头字面量', request: { method: 'GET', path: '/whoami', headers: { 'private-key': K2 } }, expect: { code: 500 } }],
+      });
+      const r = runRunner([f, '--out', out, '--history', histDir]);
+      const outTxt = fs.readFileSync(out, 'utf8');
+      const histTxt = fs.readFileSync(path.join(histDir, 's10.jsonl'), 'utf8');
+      const leak = [K1, K2].some(k => r.out.includes(k) || outTxt.includes(k) || histTxt.includes(k));
+      const shown = outTxt.includes('"private-key": "{{TOKEN}}"') && outTxt.includes('"api_key":"{{TOKEN}}"');
+      check('S10 key族头名脱敏', r.rc === 1 && !leak && shown,
+        `rc=${r.rc} 泄露=${leak} 两通道已脱敏可见=${shown}`);
     }
 
     const pass = results.filter(Boolean).length;

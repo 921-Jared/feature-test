@@ -39,8 +39,8 @@ jobs:
             echo "::error::边界自测退出码=$RC,预期=0"
             exit 1
           fi
-          echo "$OUT" | grep -q "边界自测 9/9 全过" || { echo "::error::边界自测未全过"; exit 1; }
-          echo "边界自测 9/9 全过:预检零请求/零断言/隔离/真实env/无产物/脱敏/写门禁/零请求模式/env头字面量脱敏"
+          echo "$OUT" | grep -q "边界自测 10/10 全过" || { echo "::error::边界自测未全过"; exit 1; }
+          echo "边界自测 10/10 全过:预检零请求/零断言/隔离/真实env/无产物/脱敏/写门禁/零请求模式/env头字面量脱敏/key族头名脱敏"
 
   toy-replay:
     name: 玩具端到端重放(15 PASS / 0 FAIL / 0 ERR,退出码=0)

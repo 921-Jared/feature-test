@@ -32,8 +32,8 @@ http.createServer((req, res) => {
       // 回显 query.name——验证 runner 的 GET 中文 UTF-8 编码
       res.end(JSON.stringify({ code: 200, msg: '操作成功', data: { q: url.searchParams.get('name') } }));
     } else if (url.pathname === '/whoami') {
-      // 回显 Authorization 头——验证 {{TOKEN}} 占位符替换
-      res.end(JSON.stringify({ code: 200, msg: '操作成功', data: { auth: req.headers['authorization'] || null } }));
+      // 回显 Authorization/api-key 头——验证占位符替换与 key 族头名脱敏(边界 S10)
+      res.end(JSON.stringify({ code: 200, msg: '操作成功', data: { auth: req.headers['authorization'] || null, api_key: req.headers['api-key'] || null } }));
     } else if (url.pathname === '/flag') {
       // 回显布尔值——验证布尔字面量断言(=true/=false/!=true)
       res.end(JSON.stringify({ code: 200, msg: '操作成功', data: url.searchParams.get('val') === 'true' }));

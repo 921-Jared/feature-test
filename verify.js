@@ -95,13 +95,13 @@ function scanGate() {
   const gates = [];
   gates.push(['关1 mock 自测   ', await replayGate('test/mock-server.js', 'http://127.0.0.1:18901/ok', 18901,
     ['run-cases.js', 'test/mock.cases.json', '--token', 'test-token-abc', '--allow-write'], '7 PASS / 4 FAIL / 0 ERR', 1)]);
-  // 关1b 边界自测(并入 mock 环节):预检零请求/零断言/filter 隔离/history 真实 env/无产物/脱敏/写门禁/零请求模式/env头字面量脱敏;独立端口,起停自理
+  // 关1b 边界自测(并入 mock 环节):预检零请求/零断言/filter 隔离/history 真实 env/无产物/脱敏/写门禁/零请求模式/env头字面量脱敏/key族头名脱敏;独立端口,起停自理
   {
     const r = spawnSync('node', ['test/boundary-test.js'], { cwd: ROOT, encoding: 'utf8', timeout: 180000 });
     const out = r.error ? String(r.error.message) : (r.stdout || '') + (r.stderr || '');
     const rc = r.status === null ? 99 : r.status;
-    gates.push(['关1b 边界自测   ', rc === 0 && out.includes('边界自测 9/9 全过')
-      ? { ok: true, msg: '9/9 全过,exit=0' }
+    gates.push(['关1b 边界自测   ', rc === 0 && out.includes('边界自测 10/10 全过')
+      ? { ok: true, msg: '10/10 全过,exit=0' }
       : { ok: false, msg: `exit=${rc}\n---- 输出尾 8 行 ----\n${out.trim().split(/\r?\n/).slice(-8).join('\n')}` }]);
   }
   gates.push(['关2 玩具重放    ', await replayGate('examples/toy-library/server.js', 'http://127.0.0.1:9399/api/books', 9399,

@@ -80,7 +80,7 @@ node <skill目录>/run-cases.js <cases.json> [--env local|gateway] [--filter TC0
 - 未知参数一律退 2(`--dryrun` 这类手滑不再被静默忽略——把"以为的预演"变成真发请求是最坏的一种静默降级)
 - 输出每条 `[PASS]/[FAIL]/[ERR]`+失败明细;ERR=连不上/超时/重定向(3xx,请求没到业务接口),断言不通过算 FAIL 不算 ERR;**用法错误两级均零请求退 2、`--out`/`--history` 均不写**:文件级(cases 数组/id/envs 定义及 baseURL/pathPrefix/CLI 参数错)开跑前整体退 2;用例级走**构造预检**——发第一个请求前对本次 `--filter` 选中的用例逐条离线全检(**defaultEnv 或用例 env 引用不存在的环境**、path 缺失或不以 / 开头/query 值为对象/GET·HEAD 带 body/bodyFile 不存在/占位符未解析/**零断言 expect**),任一失败列出全部坏用例整体退 2;请求构造类错误已全部前移进构造预检,不再出现跑一半才炸;`--filter` 只要求选中用例过预检,未选中的坏用例不阻断单条回归
 
-自测:`node test/mock-server.js` 起离线 mock,再 `node run-cases.js test/mock.cases.json --token test-token-abc --allow-write`(预期 7 PASS / 4 FAIL 共 11 条——FAIL 是设计出来的负例,退出码 1;带 `--allow-write` 是因为自测套件里有一条 POST 用例)。边界自测:`node test/boundary-test.js`(自起 mock 独立端口,九场景:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏/写门禁/零请求模式/env头字面量脱敏,全过退出码 0)。
+自测:`node test/mock-server.js` 起离线 mock,再 `node run-cases.js test/mock.cases.json --token test-token-abc --allow-write`(预期 7 PASS / 4 FAIL 共 11 条——FAIL 是设计出来的负例,退出码 1;带 `--allow-write` 是因为自测套件里有一条 POST 用例)。边界自测:`node test/boundary-test.js`(自起 mock 独立端口,十场景:预检零请求/零断言拦截/--filter 隔离/history 真实 env/预检无产物/token 脱敏/写门禁/零请求模式/env头字面量脱敏/key族头名脱敏,全过退出码 0)。
 
 ## 分支覆盖率(coverage.js,只对 JVM 被测服务有效)
 

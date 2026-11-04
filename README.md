@@ -78,7 +78,7 @@ feature-test/
 │   └── knownDeviation.md / Windows环境坑.md / 实证登记.md
 └── test/                       # 离线自测 mock(不依赖真实服务)
     ├── mock-server.js / mock.cases.json / bodies/ / mock-result.md
-    └── boundary-test.js        # 边界自测九场景(预检零请求/零断言/隔离/history 真实 env/无产物/脱敏/写门禁/零请求模式/env头字面量脱敏)
+    └── boundary-test.js        # 边界自测十场景(预检零请求/零断言/隔离/history 真实 env/无产物/脱敏/写门禁/零请求模式/env头字面量脱敏/key族头名脱敏)
 ```
 
 ## 许可证

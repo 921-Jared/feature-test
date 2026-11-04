@@ -121,8 +121,9 @@ const checkOnly = args.includes('--check-only');
 // 那个 token,只认 CLI 一个会漏脱);占位符形态 "{{TOKEN}}" 替换成 "{{TOKEN}}" 恒等,无副作用
 // 另收 env/用例级显式写死的鉴权头值(F8):Authorization 等头里的字面量 token 被服务端回显时,
 // 只认上面那个变量会漏脱。只收"名字像秘密"的头,且值长度 >=8——否则 "GET"/"application/json"
-// 这类短值会被全局替换,报告读不成样
-const SECRET_HEADER_RE = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$|token|secret|passw/i;
+// 这类短值会被全局替换,报告读不成样。key 族(api-key/private-key/x-auth-key/access-key 等)
+// 按子串收(P3-1:此前只精确列 x-api-key,同族其余写法全漏),宁可多脱不错漏
+const SECRET_HEADER_RE = /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|passw|key/i;
 function secretHeaderValues(obj) {
   const out = [];
   if (!obj || typeof obj !== 'object') return out;
@@ -398,7 +399,7 @@ function check(c, r) {
         const { method, url } = buildRequest(c); // 纯构造,不发请求
         console.log(`  ${method.padEnd(6)} ${redact(url.toString())}  ${c.id} ${c.name || ''}`);
       }
-      if (writeCases.length) console.log(`注意:含 ${writeCases.length} 条写方法用例,实际执行需 --allow-write`);
+      if (writeCases.length && !allowWrite) console.log(`注意:含 ${writeCases.length} 条写方法用例,实际执行需 --allow-write`);
     } else {
       console.log(`--check-only:构造预检通过 ${selected.length} 条(零请求,--out/--history 未写)`);
     }
